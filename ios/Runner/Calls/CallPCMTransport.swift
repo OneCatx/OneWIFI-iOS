@@ -119,7 +119,7 @@ final class CallPCMTransport: NSObject, CallPCMTransporting {
 
   convenience init(gateway: CallGatewayServing, call: GatewayCall) {
     self.init(gateway: gateway, call: call, audio: CallNativeAudioDevice(), clock: CallSystemMediaClock(), socketFactory: {
-      CallURLSessionSocket(try gateway.makeMediaSocket(deviceID: call.deviceID, callID: call.id))
+      try gateway.makeMediaSocket(deviceID: call.deviceID, callID: call.id)
     })
   }
   init(gateway: CallGatewayServing, call: GatewayCall, audio: CallAudioDevice, clock: CallMediaClock,
@@ -329,7 +329,7 @@ final class CallPCMTransport: NSObject, CallPCMTransporting {
   }
 }
 
-private final class CallURLSessionSocket: CallMediaSocket {
+final class CallURLSessionSocket: CallMediaSocket {
   private let task: URLSessionWebSocketTask
   init(_ task: URLSessionWebSocketTask) { self.task = task }
   var response: URLResponse? { task.response }

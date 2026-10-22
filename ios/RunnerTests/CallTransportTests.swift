@@ -640,7 +640,7 @@ private final class MediaGateway: CallGatewayServing {
   func invalidate() {}
   func performAction(deviceID: String, action: String, body: [String: String], completion: @escaping (Result<[String: Any], Error>) -> Void) -> URLSessionDataTask? { actionCount += 1; completion(.failure(CallGatewayFailure.invalidRequest)); return nil }
   func mediaMetadata(deviceID: String, callID: String, completion: @escaping (Result<CallMediaDescription, Error>) -> Void) -> URLSessionDataTask? { metadata = completion; return nil }
-  func makeMediaSocket(deviceID: String, callID: String) throws -> URLSessionWebSocketTask { throw CallGatewayFailure.invalidRequest }
+  func makeMediaSocket(deviceID: String, callID: String) throws -> CallMediaSocket { throw CallGatewayFailure.invalidRequest }
   func finishMetadata() { metadata?(.success(CallMediaDescription(id: "c", codec: "PCMA", format: "pcm_s16le_8000_mono", dtmfSupported: true))) }
 }
 private final class MediaSocket: CallMediaSocket {

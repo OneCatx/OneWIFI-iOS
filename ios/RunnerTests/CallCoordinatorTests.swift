@@ -937,7 +937,7 @@ private final class TestCallGateway: CallGatewayServing {
   func invalidate() { invalidations += 1 }
   func performAction(deviceID: String, action: String, body: [String: String], completion: @escaping (Result<[String: Any], Error>) -> Void) -> URLSessionDataTask? { actions.append(action); reply = completion; return nil }
   func mediaMetadata(deviceID: String, callID: String, completion: @escaping (Result<CallMediaDescription, Error>) -> Void) -> URLSessionDataTask? { nil }
-  func makeMediaSocket(deviceID: String, callID: String) throws -> URLSessionWebSocketTask { throw CallGatewayFailure.unavailable }
+  func makeMediaSocket(deviceID: String, callID: String) throws -> CallMediaSocket { throw CallGatewayFailure.unavailable }
 }
 
 private final class TestCallMedia: CallPCMTransporting {

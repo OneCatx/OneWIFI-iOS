@@ -10,6 +10,7 @@
 		CA4100000000000000000001 /* OtpLiveActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA4200000000000000000001 /* OtpLiveActivityTests.swift */; };
 		CA1100000000000000000001 /* CallGatewayModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1200000000000000000001 /* CallGatewayModels.swift */; };
 		CA1100000000000000000002 /* CallGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1200000000000000000002 /* CallGatewayClient.swift */; };
+		CA110000000000000000000B /* CallPinnedTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA120000000000000000000B /* CallPinnedTransport.swift */; };
 		CA1100000000000000000003 /* CallEventStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1200000000000000000003 /* CallEventStream.swift */; };
 		CA1100000000000000000004 /* CallPCMTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1200000000000000000004 /* CallPCMTransport.swift */; };
 		CA1100000000000000000005 /* CallKitCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1200000000000000000005 /* CallKitCoordinator.swift */; };
@@ -66,6 +67,7 @@
 		CA4200000000000000000001 /* OtpLiveActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtpLiveActivityTests.swift; sourceTree = "<group>"; };
 		CA1200000000000000000001 /* CallGatewayModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallGatewayModels.swift; sourceTree = "<group>"; };
 		CA1200000000000000000002 /* CallGatewayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallGatewayClient.swift; sourceTree = "<group>"; };
+		CA120000000000000000000B /* CallPinnedTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallPinnedTransport.swift; sourceTree = "<group>"; };
 		CA1200000000000000000003 /* CallEventStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallEventStream.swift; sourceTree = "<group>"; };
 		CA1200000000000000000004 /* CallPCMTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallPCMTransport.swift; sourceTree = "<group>"; };
 		CA1200000000000000000005 /* CallKitCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallKitCoordinator.swift; sourceTree = "<group>"; };
@@ -133,6 +135,7 @@
 			children = (
 				CA1200000000000000000001 /* CallGatewayModels.swift */,
 				CA1200000000000000000002 /* CallGatewayClient.swift */,
+				CA120000000000000000000B /* CallPinnedTransport.swift */,
 				CA1200000000000000000003 /* CallEventStream.swift */,
 				CA1200000000000000000004 /* CallPCMTransport.swift */,
 				CA1200000000000000000005 /* CallKitCoordinator.swift */,
@@ -410,6 +413,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				CA1100000000000000000001 /* CallGatewayModels.swift in Sources */,
 				CA1100000000000000000002 /* CallGatewayClient.swift in Sources */,
+				CA110000000000000000000B /* CallPinnedTransport.swift in Sources */,
 				CA1100000000000000000003 /* CallEventStream.swift in Sources */,
 				CA1100000000000000000004 /* CallPCMTransport.swift in Sources */,
 				CA1100000000000000000005 /* CallKitCoordinator.swift in Sources */,

@@ -29,7 +29,7 @@ def main():
             subprocess.run([
                 "openssl", "req", "-new", "-x509", "-key", str(key), "-sha256",
                 "-days", str(days), "-subj", "/O=OneWIFI/CN=OneWIFI",
-                "-addext", "subjectAltName=DNS:gateway.invalid",
+                "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
                 "-addext", "basicConstraints=critical,CA:FALSE",
                 "-addext", "keyUsage=critical,digitalSignature,keyEncipherment",
                 "-addext", "extendedKeyUsage=serverAuth", "-out", str(cert)
@@ -52,8 +52,7 @@ def main():
                     assert "lifetimeOk=false" in result.stdout
                     assert "httpStatus=401" not in result.stdout
                 else:
-                    # The leaf name is not the dialed address. Basic trust still
-                    # has to complete the handshake after the pin matches.
+                    # A leaf inside the pinned lifetime must finish the handshake.
                     assert "httpStatus=401" in result.stdout
                     assert "lifetimeOk=true" in result.stdout
                     assert "appleTrust=true" in result.stdout

@@ -12,7 +12,7 @@ protocol CallGatewayServing: AnyObject {
   func stopEvents()
   @discardableResult func performAction(deviceID: String, action: String, body: [String: String], completion: @escaping (Result<[String: Any], Error>) -> Void) -> URLSessionDataTask?
   @discardableResult func mediaMetadata(deviceID: String, callID: String, completion: @escaping (Result<CallMediaDescription, Error>) -> Void) -> URLSessionDataTask?
-  func makeMediaSocket(deviceID: String, callID: String) throws -> URLSessionWebSocketTask
+  func makeMediaSocket(deviceID: String, callID: String) throws -> CallMediaSocket
   func invalidate()
 }
 
@@ -26,8 +26,12 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
   var onSnapshot: (([GatewayCallDevice]) -> Void)?
   var onEventStatus: ((String) -> Void)?
   var eventFailure: String { stream.failure }
-  var eventDiagnostic: String { stream.failure.isEmpty ? "" : tlsDiagnostic.summary }
+  var eventDiagnostic: String {
+    guard !stream.failure.isEmpty else { return "" }
+    return configuration.certificateFingerprint == nil ? tlsDiagnostic.summary : report.summary
+  }
   private var tlsDiagnostic = CallTLSDiagnostic()
+  private let report = CallTLSReport()
   private var session: URLSession!
   private var stream: CallEventStream!
   private var invalidated = false
@@ -48,13 +52,17 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
     sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
     sessionConfiguration.timeoutIntervalForRequest = 40
     sessionConfiguration.timeoutIntervalForResource = 7 * 24 * 3600
+    var protocols = sessionConfiguration.protocolClasses ?? []
+    protocols.insert(CallPinnedURLProtocol.self, at: 0)
+    sessionConfiguration.protocolClasses = protocols
     session = URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: .main)
     stream = CallEventStream { [weak self] in
       guard let self else { throw CallGatewayFailure.cancelled }
       self.tlsDiagnostic = CallTLSDiagnostic(pinConfigured: self.configuration.certificateFingerprint != nil)
+      self.report.reset(pinConfigured: self.configuration.certificateFingerprint != nil)
       var request = try self.request(path: ["api", "calls", "events"])
       request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-      return self.session.dataTask(with: request)
+      return self.session.dataTask(with: self.sealed(request, diagnostic: self.report))
     }
     stream.onSnapshot = { [weak self] in self?.onSnapshot?($0) }
     stream.onStatus = { [weak self] in self?.onEventStatus?($0) }
@@ -89,6 +97,13 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
     request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
     return request
   }
+  private func sealed(_ request: URLRequest, diagnostic: CallTLSReport? = nil) -> URLRequest {
+    guard let pin = configuration.certificateFingerprint else { return request }
+    let mutable = (request as NSURLRequest).mutableCopy() as! NSMutableURLRequest
+    URLProtocol.setProperty(pin, forKey: CallPinnedURLProtocol.pinKey, in: mutable)
+    if let diagnostic { URLProtocol.setProperty(diagnostic, forKey: CallPinnedURLProtocol.reportKey, in: mutable) }
+    return mutable as URLRequest
+  }
   @discardableResult func performAction(deviceID: String, action: String, body: [String: String], completion: @escaping (Result<[String: Any], Error>) -> Void) -> URLSessionDataTask? {
     do {
       let expected: Set<String>
@@ -116,19 +131,21 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
       }
     } catch { DispatchQueue.main.async { completion(.failure(error)) }; return nil }
   }
-  func makeMediaSocket(deviceID: String, callID: String) throws -> URLSessionWebSocketTask {
+  func makeMediaSocket(deviceID: String, callID: String) throws -> CallMediaSocket {
     var req = try request(path: ["api", "devices", deviceID, "calls", "media"], query: [URLQueryItem(name: "id", value: callID)])
     var url = URLComponents(url: req.url!, resolvingAgainstBaseURL: false)!
     url.scheme = url.scheme == "https" ? "wss" : "ws"; req.url = url.url; req.timeoutInterval = 8
-    let task = session.webSocketTask(with: req); task.maximumMessageSize = 6400; return task
+    if let pin = configuration.certificateFingerprint { return try CallPinnedWebSocket(request: req, pin: pin) }
+    let task = session.webSocketTask(with: req); task.maximumMessageSize = 6400; return CallURLSessionSocket(task)
   }
   private func json(_ request: URLRequest, completion: @escaping (Result<[String: Any], Error>) -> Void) -> URLSessionDataTask {
-    let task = session.dataTask(with: request); pending[task.taskIdentifier] = Pending(completion: completion); task.resume(); return task
+    let task = session.dataTask(with: sealed(request)); pending[task.taskIdentifier] = Pending(completion: completion); task.resume(); return task
   }
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
     guard let http = response as? HTTPURLResponse else { completionHandler(.cancel); return }
     if stream.owns(dataTask) {
       tlsDiagnostic.httpStatus = http.statusCode
+      report.update { $0.httpStatus = http.statusCode }
       completionHandler(stream.response(http) ? .allow : .cancel); return
     }
     guard pending[dataTask.taskIdentifier] != nil else { completionHandler(.cancel); return }
@@ -144,6 +161,7 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     if stream.owns(task) {
       tlsDiagnostic.record(error)
+      report.update { $0.record(error) }
       stream.complete(error); return
     }
     guard let value = pending[task.taskIdentifier] else { return }
