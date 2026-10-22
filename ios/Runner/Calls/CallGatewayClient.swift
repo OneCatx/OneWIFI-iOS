@@ -193,29 +193,30 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
     tlsDiagnostic.stage = "lifetime"
     guard CallCertificateValidity.withinPinnedLifetime(der) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "policy"
-    let policy = SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, configuration.origin.host! as CFString))
-    tlsDiagnostic.securityStatus = Int(policy)
-    guard policy == errSecSuccess else { completionHandler(.cancelAuthenticationChallenge, nil); return }
+    // The session trust already carries an SSL policy for the dialed IP.
+    // Replacing that policy in place still evaluated as -67602 on iOS 27, and
+    // URLCredential then aborted the stream with -9802. A new basic trust has
+    // no hostname check. The pin, the dialed origin, and the dates above are
+    // the gateway checks; this evaluation only has to succeed.
+    var pinnedTrust: SecTrust?
+    let created = SecTrustCreateWithCertificates(leaf, SecPolicyCreateBasicX509(), &pinnedTrust)
+    tlsDiagnostic.securityStatus = Int(created)
+    guard created == errSecSuccess, let pinnedTrust else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "anchor"
-    let anchor = SecTrustSetAnchorCertificates(trust, [leaf] as CFArray)
+    let anchor = SecTrustSetAnchorCertificates(pinnedTrust, [leaf] as CFArray)
     tlsDiagnostic.securityStatus = Int(anchor)
     guard anchor == errSecSuccess else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "anchor_only"
-    let anchorOnly = SecTrustSetAnchorCertificatesOnly(trust, true)
+    let anchorOnly = SecTrustSetAnchorCertificatesOnly(pinnedTrust, true)
     tlsDiagnostic.securityStatus = Int(anchorOnly)
     guard anchorOnly == errSecSuccess else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "apple_trust"
     var trustError: CFError?
-    let accepted = SecTrustEvaluateWithError(trust, &trustError)
+    let accepted = SecTrustEvaluateWithError(pinnedTrust, &trustError)
     tlsDiagnostic.trustCode = trustError.map { CFErrorGetCode($0) }
-    // iOS 27 still applies public-CA rules to this pinned leaf: -67901 when the
-    // lifetime exceeds Apple's cap, and -67602 when the dialed address is not in
-    // the certificate name. The pin and the 398-day ceiling are the gateway rule.
-    guard CallCertificateValidity.acceptsEvaluation(accepted: accepted, error: trustError) else {
-      completionHandler(.cancelAuthenticationChallenge, nil); return
-    }
+    guard accepted else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "accepted"
-    completionHandler(.useCredential, URLCredential(trust: trust))
+    completionHandler(.useCredential, URLCredential(trust: pinnedTrust))
   }
 }
 
@@ -277,8 +278,7 @@ struct CallTLSDiagnostic {
 /// Anchored leaf trust may exempt anchor expiry. Read X.509 validity explicitly as well.
 enum CallCertificateValidity {
   /// Pinned gateway ceiling, matching the server's self-signed lifetime.
-  /// Longer leaves stay rejected. Apple's shorter public-CA cap is handled
-  /// in `acceptsEvaluation` instead of rotating a certificate the pin already names.
+  /// Longer leaves stay rejected before trust evaluation.
   static let maximumLifetime: TimeInterval = 398 * 24 * 60 * 60
 
   static func containsNow(_ data: Data, now: Date = Date()) -> Bool {
@@ -291,10 +291,8 @@ enum CallCertificateValidity {
     return window.end.timeIntervalSince(window.start) <= maximumLifetime
   }
 
-  /// A pinned leaf that already passed `withinPinnedLifetime` may continue when
-  /// Apple only reports its public-CA lifetime cap (-67901) or a name check
-  /// against an address the certificate does not list (-67602). Every other
-  /// trust failure still cancels the challenge.
+  /// Unit-test record of Apple's public-CA codes. The call challenge does not
+  /// use this: URLSession aborts a failed trust with -9802 after the callback.
   static func acceptsEvaluation(accepted: Bool, error: CFError?) -> Bool {
     if accepted { return true }
     guard let error,

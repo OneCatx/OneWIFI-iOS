@@ -49,22 +49,26 @@ final class TLSProbe: NSObject, URLSessionDataDelegate {
     let validity = CallCertificateValidity.containsNow(der)
     let lifetime = CallCertificateValidity.withinPinnedLifetime(der)
     print("pinMatches=\(pinMatches) appValidity=\(validity) lifetimeOk=\(lifetime)")
-    let policy = SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, origin.host! as CFString))
-    let anchor = SecTrustSetAnchorCertificates(trust, [leaf] as CFArray)
-    let anchorOnly = SecTrustSetAnchorCertificatesOnly(trust, true)
+    var pinnedTrust: SecTrust?
+    let created = SecTrustCreateWithCertificates(leaf, SecPolicyCreateBasicX509(), &pinnedTrust)
+    guard created == errSecSuccess, let pinnedTrust else {
+      print("policyStatus=\(created)")
+      completionHandler(.cancelAuthenticationChallenge, nil); return
+    }
+    let anchor = SecTrustSetAnchorCertificates(pinnedTrust, [leaf] as CFArray)
+    let anchorOnly = SecTrustSetAnchorCertificatesOnly(pinnedTrust, true)
     var error: CFError?
-    let accepted = SecTrustEvaluateWithError(trust, &error)
-    let trusted = CallCertificateValidity.acceptsEvaluation(accepted: accepted, error: error)
-    print("policyStatus=\(policy) anchorStatus=\(anchor) anchorOnlyStatus=\(anchorOnly) appleTrust=\(accepted) pinnedTrust=\(trusted)")
+    let accepted = SecTrustEvaluateWithError(pinnedTrust, &error)
+    print("policyStatus=\(created) anchorStatus=\(anchor) anchorOnlyStatus=\(anchorOnly) appleTrust=\(accepted) pinnedTrust=\(accepted)")
     if let error {
       // Numeric trust errors only; never dump request/session contents.
       print("trustErrorCode=\(CFErrorGetCode(error))")
     }
-    guard pinMatches, validity, lifetime, policy == errSecSuccess, anchor == errSecSuccess,
-          anchorOnly == errSecSuccess, trusted else {
+    guard pinMatches, validity, lifetime, anchor == errSecSuccess,
+          anchorOnly == errSecSuccess, accepted else {
       completionHandler(.cancelAuthenticationChallenge, nil); return
     }
-    completionHandler(.useCredential, URLCredential(trust: trust))
+    completionHandler(.useCredential, URLCredential(trust: pinnedTrust))
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask,

@@ -29,7 +29,7 @@ def main():
             subprocess.run([
                 "openssl", "req", "-new", "-x509", "-key", str(key), "-sha256",
                 "-days", str(days), "-subj", "/O=OneWIFI/CN=OneWIFI",
-                "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
+                "-addext", "subjectAltName=DNS:gateway.invalid",
                 "-addext", "basicConstraints=critical,CA:FALSE",
                 "-addext", "keyUsage=critical,digitalSignature,keyEncipherment",
                 "-addext", "extendedKeyUsage=serverAuth", "-out", str(cert)
@@ -49,14 +49,14 @@ def main():
                 print(f"certificate_days={days}\n{result.stdout}", flush=True)
                 assert (result.returncode == 0) == expected, result.stderr
                 if not expected:
-                    assert "trustErrorCode=-67901" in result.stdout
                     assert "lifetimeOk=false" in result.stdout
+                    assert "httpStatus=401" not in result.stdout
                 else:
-                    # iOS 27 / newer macOS reject a 365-day leaf with -67901.
-                    # The pinned client accepts that code inside the 398-day ceiling.
+                    # The leaf name is not the dialed address. Basic trust still
+                    # has to complete the handshake after the pin matches.
                     assert "httpStatus=401" in result.stdout
                     assert "lifetimeOk=true" in result.stdout
-                    assert "appleTrust=true" in result.stdout or "pinnedTrust=true" in result.stdout
+                    assert "appleTrust=true" in result.stdout
             finally:
                 server.shutdown()
                 server.server_close()
