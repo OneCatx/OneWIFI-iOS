@@ -15,7 +15,6 @@ import '../../sms/state/sms_controller.dart';
 import '../domain/gateway_settings.dart';
 import '../state/settings_controller.dart';
 import 'widgets/settings_appearance_tiles.dart';
-import 'widgets/settings_entry_tile.dart';
 import 'widgets/settings_https_tiles.dart';
 import 'widgets/settings_language_tiles.dart';
 import 'widgets/settings_license_card.dart';
@@ -263,98 +262,10 @@ final class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: OneSpacing.medium),
-              OwSection(
-                key: SettingsScreen.systemInfoKey,
-                title: '系统信息',
-                icon: Icons.info_outline,
-                tone: PlateTone.blue,
-                desc: 'GET /api/system/info',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('网关版本：${snap.info.version}'),
-                    if (snap.info.buildTime.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: OneSpacing.nano),
-                      Text('构建时间：${snap.info.buildTime}'),
-                    ],
-                    const SizedBox(height: OneSpacing.nano),
-                    Text(snap.info.developer ? '开发者模式：已开' : '开发者模式：未开'),
-                  ],
-                ),
-              ),
-              if (_hasGatewayEntries) ...<Widget>[
-                const SizedBox(height: OneSpacing.medium),
-                OwSection(
-                  title: '网关能力',
-                  icon: Icons.hub_outlined,
-                  tone: PlateTone.purple,
-                  desc: 'P6 增量：只进设置下钻，不新增底栏。',
-                  child: Column(
-                    children: <Widget>[
-                      if (widget.onOpenLogs != null)
-                        SettingsEntryTile(
-                          key: SettingsScreen.entryLogsKey,
-                          icon: Icons.article_outlined,
-                          title: '问题日志',
-                          sub: 'GET /api/logs/history',
-                          onTap: widget.onOpenLogs!,
-                        ),
-                      if (widget.onOpenAutomation != null) ...<Widget>[
-                        const SizedBox(height: OneSpacing.small),
-                        SettingsEntryTile(
-                          key: SettingsScreen.entryAutomationKey,
-                          icon: Icons.schedule_outlined,
-                          title: '保号任务',
-                          sub: 'GET /api/automatic-tasks',
-                          onTap: widget.onOpenAutomation!,
-                        ),
-                      ],
-                      if (widget.onOpenExtensions != null) ...<Widget>[
-                        const SizedBox(height: OneSpacing.small),
-                        SettingsEntryTile(
-                          key: SettingsScreen.entryExtensionsKey,
-                          icon: Icons.extension_outlined,
-                          title: '扩展',
-                          sub: 'GET /api/extensions',
-                          onTap: widget.onOpenExtensions!,
-                        ),
-                      ],
-                      if (widget.onOpenUpstream != null) ...<Widget>[
-                        const SizedBox(height: OneSpacing.small),
-                        SettingsEntryTile(
-                          key: SettingsScreen.entryUpstreamKey,
-                          icon: Icons.public_outlined,
-                          title: '网关出站代理',
-                          sub: 'GET /api/upstream-proxies',
-                          onTap: widget.onOpenUpstream!,
-                        ),
-                      ],
-                      if (widget.onOpenExportProxies != null) ...<Widget>[
-                        const SizedBox(height: OneSpacing.small),
-                        SettingsEntryTile(
-                          key: SettingsScreen.entryExportKey,
-                          icon: Icons.hub_outlined,
-                          title: '导出代理',
-                          sub: 'GET /api/export-proxies（开发者）',
-                          onTap: widget.onOpenExportProxies!,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
         );
       },
     );
   }
-
-  bool get _hasGatewayEntries =>
-      widget.onOpenLogs != null ||
-      widget.onOpenAutomation != null ||
-      widget.onOpenExtensions != null ||
-      widget.onOpenUpstream != null ||
-      widget.onOpenExportProxies != null;
 }

@@ -130,10 +130,7 @@ final class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.transparent,
           body: GlassBackdrop(
             child: SafeArea(
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  LayoutBuilder(
+              child: LayoutBuilder(
                 builder: (context, constraints) => SingleChildScrollView(
                   padding: OneInsets.page,
                   child: ConstrainedBox(
@@ -168,24 +165,15 @@ final class _LoginScreenState extends State<LoginScreen> {
                           licenseFocus: _licenseFocus,
                           showLicense: !_licensed,
                           licenseError: LicenseCode.localError(_license.text),
+                          onCertificate: widget.controller.connections == null
+                              ? null
+                              : _configureCertificate,
+                          certificateKey: LoginScreen.fingerprintKey,
                         ),
                       ),
                     ),
                   ),
                 ),
-                  ),
-                  if (widget.controller.connections != null)
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: IconButton(
-                        key: LoginScreen.fingerprintKey,
-                        tooltip: '证书指纹',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: busy ? null : _configureCertificate,
-                        icon: const Icon(Icons.fingerprint, size: 22),
-                      ),
-                    ),
-                ],
               ),
             ),
           ),
