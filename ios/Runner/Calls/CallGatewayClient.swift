@@ -208,9 +208,9 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
     var trustError: CFError?
     let accepted = SecTrustEvaluateWithError(trust, &trustError)
     tlsDiagnostic.trustCode = trustError.map { CFErrorGetCode($0) }
-    // iOS 27 applies the public-CA lifetime cap (200 days from 2026-03-15) even
-    // when this leaf is the only anchor, and returns -67901. The pin and the
-    // 398-day ceiling above are the gateway rule; that one code is not a mismatch.
+    // iOS 27 still applies public-CA rules to this pinned leaf: -67901 when the
+    // lifetime exceeds Apple's cap, and -67602 when the dialed address is not in
+    // the certificate name. The pin and the 398-day ceiling are the gateway rule.
     guard CallCertificateValidity.acceptsEvaluation(accepted: accepted, error: trustError) else {
       completionHandler(.cancelAuthenticationChallenge, nil); return
     }
@@ -291,15 +291,20 @@ enum CallCertificateValidity {
     return window.end.timeIntervalSince(window.start) <= maximumLifetime
   }
 
-  /// `errSecCertificateValidityPeriodTooLong` (-67901) is Apple's public-CA
-  /// schedule. A pinned leaf that already passed `withinPinnedLifetime` may
-  /// continue; every other trust failure still cancels the challenge.
+  /// A pinned leaf that already passed `withinPinnedLifetime` may continue when
+  /// Apple only reports its public-CA lifetime cap (-67901) or a name check
+  /// against an address the certificate does not list (-67602). Every other
+  /// trust failure still cancels the challenge.
   static func acceptsEvaluation(accepted: Bool, error: CFError?) -> Bool {
     if accepted { return true }
     guard let error,
-      CFErrorGetDomain(error) == NSOSStatusErrorDomain as CFString,
-      CFErrorGetCode(error) == CFIndex(errSecCertificateValidityPeriodTooLong) else { return false }
-    return true
+      CFErrorGetDomain(error) == NSOSStatusErrorDomain as CFString else { return false }
+    switch CFErrorGetCode(error) {
+    case CFIndex(errSecCertificateValidityPeriodTooLong), CFIndex(errSecHostNameMismatch):
+      return true
+    default:
+      return false
+    }
   }
 
   private struct Window { let start: Date; let end: Date }

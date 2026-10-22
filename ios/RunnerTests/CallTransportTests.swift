@@ -501,6 +501,8 @@ final class CallTransportTests: XCTestCase {
     XCTAssertFalse(CallCertificateValidity.withinPinnedLifetime(Data([0x30, 0x84, 0xff])))
     let period = CFErrorCreate(nil, NSOSStatusErrorDomain as CFString, CFIndex(errSecCertificateValidityPeriodTooLong), nil)
     XCTAssertTrue(CallCertificateValidity.acceptsEvaluation(accepted: false, error: period))
+    let host = CFErrorCreate(nil, NSOSStatusErrorDomain as CFString, CFIndex(errSecHostNameMismatch), nil)
+    XCTAssertTrue(CallCertificateValidity.acceptsEvaluation(accepted: false, error: host))
     XCTAssertTrue(CallCertificateValidity.acceptsEvaluation(accepted: true, error: nil))
     XCTAssertFalse(CallCertificateValidity.acceptsEvaluation(accepted: false, error: nil))
     let expired = CFErrorCreate(nil, NSOSStatusErrorDomain as CFString, CFIndex(errSecCertificateExpired), nil)
