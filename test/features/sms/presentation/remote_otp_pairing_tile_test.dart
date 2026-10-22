@@ -20,7 +20,8 @@ const _channel = MethodChannel('test/pairing-tile-apns');
 const _token =
     'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
-/// push-to-start 令牌与横幅令牌是两个空间，长度是 160 位十六进制�?const _startToken =
+/// push-to-start 令牌与横幅令牌是两个空间，长度是 160 位十六进制。
+const _startToken =
     '802a51a15c0de1f2ab34cd56ef78a901b2c3d4e5f60718293a4b5c6d7e8f90'
     '802a51a15c0de1f2ab34cd56ef78a901b2c3d4e5f60718293a4b5c6d7e8f90'
     '1234567890abcdef1234567890abcdef';
@@ -110,7 +111,7 @@ void main() {
       alertsEnabled: false,
     );
     await pumpTile(tester);
-    expect(find.textContaining('系统通知权限未开�?), findsOneWidget);
+    expect(find.textContaining('系统通知权限未开启'), findsOneWidget);
     expect(find.text('开启通知权限'), findsOneWidget);
 
     replies['requestNotificationAuthorization'] = tokenState(
@@ -123,7 +124,7 @@ void main() {
       calls.map((call) => call.method),
       contains('requestNotificationAuthorization'),
     );
-    expect(find.text('后台推送已就绪�?), findsOneWidget);
+    expect(find.text('后台推送已就绪。'), findsOneWidget);
     expect(find.byKey(RemoteOtpPairingTile.pushActionKey), findsNothing);
   });
 
@@ -166,8 +167,8 @@ void main() {
       alertsEnabled: false,
     );
     await pumpTile(tester);
-    expect(find.textContaining('横幅被关�?), findsOneWidget);
-    expect(find.text('去系统设�?), findsOneWidget);
+    expect(find.textContaining('横幅被关闭'), findsOneWidget);
+    expect(find.text('去系统设置'), findsOneWidget);
   });
 
   testWidgets('a start token cannot claim receive activity readiness', (
@@ -179,7 +180,7 @@ void main() {
       pushToStartToken: _startToken,
     );
     await pumpTile(tester);
-    expect(find.textContaining('接收活动等待就绪'), findsOneWidget);
+    expect(find.textContaining('接收活动'), findsNothing);
     expect(find.textContaining('启动令牌'), findsNothing);
   });
 
@@ -191,7 +192,7 @@ void main() {
       alertsEnabled: true,
     );
     await pumpTile(tester);
-    expect(find.textContaining('接收活动等待就绪'), findsOneWidget);
+    expect(find.textContaining('接收活动'), findsNothing);
   });
 
   testWidgets('paired disconnect stays in the card header', (tester) async {
@@ -262,10 +263,11 @@ final class _UnusedSmsRepository implements SmsRepository {
   Future<int> deleteThread(
     SmsContactTarget target, {
     RequestCancellation? cancellation,
-  }
+  }) => throw UnimplementedError();
+
   @override
   Future<bool> deleteMessage(
     int messageId, {
     RequestCancellation? cancellation,
-  }) async => true;) => throw UnimplementedError();
+  }) async => true;
 }

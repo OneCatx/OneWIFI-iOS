@@ -5,64 +5,72 @@ import XCTest
 @available(iOS 16.2, *)
 @MainActor
 final class OtpLiveActivityTests: XCTestCase {
-  func testDuplicatePrepareRequestsOnceAndKeepsDeadline() async throws {
+  func testPrepareNeverRequestsAndEndsExisting() async throws {
     let fixture = Fixture()
+    let existing = FakeActivity(id: "old", scope: "scope-a", startedAt: fixture.now)
+    fixture.backend.values = [existing]
     let first = try await fixture.owner.prepare(scope: "scope-a")
-    fixture.now = fixture.now.addingTimeInterval(30)
     let second = try await fixture.owner.prepare(scope: "scope-a")
-    XCTAssertEqual(fixture.backend.requests, 1)
-    XCTAssertEqual(first["expires_at"] as? Int, second["expires_at"] as? Int)
+    XCTAssertEqual(existing.ends, 2)
+    XCTAssertEqual(first["state"] as? String, "none")
+    XCTAssertEqual(second["state"] as? String, "none")
+    XCTAssertEqual(first["activity_id"] as? String, "")
   }
 
-  func testBackgroundCannotCreate() async {
+  func testInvalidScopeDoesNotRequest() async {
     let fixture = Fixture()
-    fixture.foreground = false
-    do { _ = try await fixture.owner.prepare(scope: "scope-a"); XCTFail("background accepted") }
+    do { _ = try await fixture.owner.prepare(scope: ""); XCTFail("empty scope accepted") }
     catch {}
-    XCTAssertEqual(fixture.backend.requests, 0)
   }
 
-  func testDismissedActivityDoesNotReviveUntilForegroundEntry() async throws {
+  func testForegroundEntryEndsActivityWithoutRequest() async {
     let fixture = Fixture()
-    _ = try await fixture.owner.prepare(scope: "scope-a")
-    fixture.backend.values[0].status = .dismissed
-    _ = fixture.owner.snapshot()
-    _ = try await fixture.owner.prepare(scope: "scope-a")
-    XCTAssertEqual(fixture.backend.requests, 1)
+    let existing = FakeActivity(id: "old", scope: "scope-a", startedAt: fixture.now)
+    fixture.backend.values = [existing]
     fixture.owner.foregroundEntry()
-    _ = try await fixture.owner.prepare(scope: "scope-a")
-    XCTAssertEqual(fixture.backend.requests, 2)
+    for _ in 0..<5 { await Task.yield() }
+    XCTAssertEqual(existing.ends, 1)
   }
 
-  func testStaleActivityIsReused() async throws {
+  func testSnapshotEndsRestoredActivityAndDropsToken() {
     let fixture = Fixture()
-    _ = try await fixture.owner.prepare(scope: "scope-a")
-    fixture.backend.values[0].status = .stale
-    _ = try await fixture.owner.prepare(scope: "scope-a")
-    XCTAssertEqual(fixture.backend.requests, 1)
-  }
-
-  func testEndClearsTokenAndLateTokenCannotRevive() async throws {
-    let fixture = Fixture()
-    _ = try await fixture.owner.prepare(scope: "scope-a")
-    let value = fixture.backend.values[0]
-    value.token = Data([0xaa, 0xbb])
-    _ = fixture.owner.snapshot()
-    _ = await fixture.owner.end(scope: "scope-a")
-    value.tokenContinuation.yield(Data([0xcc, 0xdd]))
-    await Task.yield()
+    let existing = FakeActivity(id: "live", scope: "scope-a", startedAt: fixture.now)
+    fixture.backend.values = [existing]
+    fixture.defaults.set([
+      "scope_id": "scope-a", "activity_id": "live", "update_token": "aabb",
+      "revision": 1, "state": "active",
+      "started_at": Int(fixture.now.timeIntervalSince1970),
+      "expires_at": Int(fixture.now.addingTimeInterval(28_800).timeIntervalSince1970),
+    ], forKey: "onewifi.otp.activity.snapshot")
     let state = fixture.owner.snapshot()
     XCTAssertEqual(state["state"] as? String, "ended")
     XCTAssertEqual(state["update_token"] as? String, "")
   }
 
-  func testWrongScopeAndLegacyAreEndedBeforeNewRequest() async throws {
+  func testEndClearsTokenAndDoesNotRevive() async {
+    let fixture = Fixture()
+    fixture.defaults.set([
+      "scope_id": "scope-a", "activity_id": "live", "update_token": "aabb",
+      "revision": 1, "state": "active",
+      "started_at": Int(fixture.now.timeIntervalSince1970),
+      "expires_at": Int(fixture.now.addingTimeInterval(28_800).timeIntervalSince1970),
+    ], forKey: "onewifi.otp.activity.snapshot")
+    let existing = FakeActivity(id: "live", scope: "scope-a", startedAt: fixture.now)
+    fixture.backend.values = [existing]
+    let state = await fixture.owner.end(scope: "scope-a")
+    XCTAssertEqual(existing.ends, 1)
+    XCTAssertEqual(state["state"] as? String, "ended")
+    XCTAssertEqual(state["update_token"] as? String, "")
+    XCTAssertEqual(fixture.owner.snapshot()["update_token"] as? String, "")
+  }
+
+  func testLegacyActivityIsEndedAndNeverReplaced() async throws {
     let fixture = Fixture()
     let legacy = FakeActivity(id: "legacy", scope: nil, startedAt: nil)
     fixture.backend.values = [legacy]
-    _ = try await fixture.owner.prepare(scope: "scope-a")
+    let state = try await fixture.owner.prepare(scope: "scope-a")
     XCTAssertEqual(legacy.ends, 1)
-    XCTAssertTrue(fixture.backend.cleanAtRequest)
+    XCTAssertEqual(state["state"] as? String, "none")
   }
 
   func testExpiredCodeProjectionNeverReturnsOldCode() {
@@ -76,28 +84,17 @@ final class OtpLiveActivityTests: XCTestCase {
 @MainActor
 private final class Fixture {
   var now = Date(timeIntervalSince1970: 1_790_000_000)
-  var foreground = true
   let backend = FakeBackend()
   let defaults = UserDefaults(suiteName: "otp-tests-\(UUID().uuidString)")!
   lazy var owner = OtpLiveActivity(backend: backend, defaults: defaults,
-    now: { [unowned self] in self.now }, foreground: { [unowned self] in self.foreground })
+    now: { [unowned self] in self.now })
 }
 
 @available(iOS 16.2, *)
 @MainActor
 private final class FakeBackend: OtpActivityBackend {
   var values: [FakeActivity] = []
-  var requests = 0
-  var cleanAtRequest = true
-  var enabled: Bool { true }
   var activities: [any OtpActivityHandle] { values }
-  func request(scope: String, startedAt: Date) throws -> any OtpActivityHandle {
-    cleanAtRequest = values.allSatisfy { $0.status == .ended || $0.status == .dismissed }
-    requests += 1
-    let value = FakeActivity(id: "activity-\(requests)", scope: scope, startedAt: startedAt)
-    values.append(value)
-    return value
-  }
 }
 
 @available(iOS 16.2, *)
@@ -107,17 +104,9 @@ private final class FakeActivity: OtpActivityHandle {
   let scope: String?
   let startedAt: Date?
   var status: ActivityState = .active
-  var token: Data?
   var ends = 0
-  let tokens: AsyncStream<Data>
-  let states: AsyncStream<ActivityState>
-  let tokenContinuation: AsyncStream<Data>.Continuation
   init(id: String, scope: String?, startedAt: Date?) {
     self.id = id; self.scope = scope; self.startedAt = startedAt
-    var continuation: AsyncStream<Data>.Continuation!
-    tokens = AsyncStream { continuation = $0 }
-    tokenContinuation = continuation
-    states = AsyncStream { _ in }
   }
   func end() async { ends += 1; status = .ended }
 }
