@@ -190,6 +190,8 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
     guard actual == pin else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "validity"
     guard CallCertificateValidity.containsNow(der) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
+    tlsDiagnostic.stage = "lifetime"
+    guard CallCertificateValidity.withinPinnedLifetime(der) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
     tlsDiagnostic.stage = "policy"
     let policy = SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, configuration.origin.host! as CFString))
     tlsDiagnostic.securityStatus = Int(policy)
@@ -206,7 +208,12 @@ final class CallGatewayClient: NSObject, CallGatewayServing, URLSessionDataDeleg
     var trustError: CFError?
     let accepted = SecTrustEvaluateWithError(trust, &trustError)
     tlsDiagnostic.trustCode = trustError.map { CFErrorGetCode($0) }
-    guard accepted else { completionHandler(.cancelAuthenticationChallenge, nil); return }
+    // iOS 27 applies the public-CA lifetime cap (200 days from 2026-03-15) even
+    // when this leaf is the only anchor, and returns -67901. The pin and the
+    // 398-day ceiling above are the gateway rule; that one code is not a mismatch.
+    guard CallCertificateValidity.acceptsEvaluation(accepted: accepted, error: trustError) else {
+      completionHandler(.cancelAuthenticationChallenge, nil); return
+    }
     tlsDiagnostic.stage = "accepted"
     completionHandler(.useCredential, URLCredential(trust: trust))
   }
@@ -269,7 +276,35 @@ struct CallTLSDiagnostic {
 
 /// Anchored leaf trust may exempt anchor expiry. Read X.509 validity explicitly as well.
 enum CallCertificateValidity {
+  /// Pinned gateway ceiling, matching the server's self-signed lifetime.
+  /// Longer leaves stay rejected. Apple's shorter public-CA cap is handled
+  /// in `acceptsEvaluation` instead of rotating a certificate the pin already names.
+  static let maximumLifetime: TimeInterval = 398 * 24 * 60 * 60
+
   static func containsNow(_ data: Data, now: Date = Date()) -> Bool {
+    guard let window = window(data) else { return false }
+    return window.start <= now && now <= window.end
+  }
+
+  static func withinPinnedLifetime(_ data: Data) -> Bool {
+    guard let window = window(data) else { return false }
+    return window.end.timeIntervalSince(window.start) <= maximumLifetime
+  }
+
+  /// `errSecCertificateValidityPeriodTooLong` (-67901) is Apple's public-CA
+  /// schedule. A pinned leaf that already passed `withinPinnedLifetime` may
+  /// continue; every other trust failure still cancels the challenge.
+  static func acceptsEvaluation(accepted: Bool, error: CFError?) -> Bool {
+    if accepted { return true }
+    guard let error,
+      CFErrorGetDomain(error) == NSOSStatusErrorDomain as CFString,
+      CFErrorGetCode(error) == CFIndex(errSecCertificateValidityPeriodTooLong) else { return false }
+    return true
+  }
+
+  private struct Window { let start: Date; let end: Date }
+
+  private static func window(_ data: Data) -> Window? {
     struct DER {
       let bytes: [UInt8]; var offset = 0
       mutating func next() -> (UInt8, [UInt8])? {
@@ -283,11 +318,11 @@ enum CallCertificateValidity {
         let value = Array(bytes[offset..<(offset + length)]); offset += length; return (tag, value)
       }
     }
-    var root = DER(bytes: Array(data)); guard let cert = root.next(), cert.0 == 0x30 else { return false }
-    var certBody = DER(bytes: cert.1); guard let tbs = certBody.next(), tbs.0 == 0x30 else { return false }
-    var body = DER(bytes: tbs.1); guard let first = body.next() else { return false }
-    if first.0 == 0xa0 { guard body.next() != nil else { return false } }
-    guard body.next() != nil, body.next() != nil, let validity = body.next(), validity.0 == 0x30 else { return false }
+    var root = DER(bytes: Array(data)); guard let cert = root.next(), cert.0 == 0x30 else { return nil }
+    var certBody = DER(bytes: cert.1); guard let tbs = certBody.next(), tbs.0 == 0x30 else { return nil }
+    var body = DER(bytes: tbs.1); guard let first = body.next() else { return nil }
+    if first.0 == 0xa0 { guard body.next() != nil else { return nil } }
+    guard body.next() != nil, body.next() != nil, let validity = body.next(), validity.0 == 0x30 else { return nil }
     var times = DER(bytes: validity.1)
     func date(_ value: (UInt8, [UInt8])?) -> Date? {
       guard let value, let text = String(bytes: value.1, encoding: .ascii), text.hasSuffix("Z") else { return nil }
@@ -297,7 +332,7 @@ enum CallCertificateValidity {
       else if value.0 != 0x18 || text.count != 15 { return nil }
       formatter.dateFormat = "yyyyMMddHHmmss'Z'"; return formatter.date(from: normalized)
     }
-    guard let start = date(times.next()), let end = date(times.next()) else { return false }
-    return start <= now && now <= end
+    guard let start = date(times.next()), let end = date(times.next()) else { return nil }
+    return Window(start: start, end: end)
   }
 }

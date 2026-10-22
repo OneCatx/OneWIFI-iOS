@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import Security
 @testable import Runner
 
 final class CallTransportTests: XCTestCase {
@@ -494,6 +495,18 @@ final class CallTransportTests: XCTestCase {
     XCTAssertFalse(CallCertificateValidity.containsNow(certificate("230101000000Z", "240101000000Z"), now: now))
     XCTAssertFalse(CallCertificateValidity.containsNow(certificate("270101000000Z", "280101000000Z"), now: now))
     XCTAssertFalse(CallCertificateValidity.containsNow(Data([0x30, 0x84, 0xff])))
+    XCTAssertTrue(CallCertificateValidity.withinPinnedLifetime(certificate("250101000000Z", "260101000000Z")))
+    XCTAssertFalse(CallCertificateValidity.withinPinnedLifetime(certificate("250101000000Z", "260204000000Z")))
+    XCTAssertFalse(CallCertificateValidity.withinPinnedLifetime(certificate("250101000000Z", "270101000000Z")))
+    XCTAssertFalse(CallCertificateValidity.withinPinnedLifetime(Data([0x30, 0x84, 0xff])))
+    let period = CFErrorCreate(nil, NSOSStatusErrorDomain as CFString, CFIndex(errSecCertificateValidityPeriodTooLong), nil)
+    XCTAssertTrue(CallCertificateValidity.acceptsEvaluation(accepted: false, error: period))
+    XCTAssertTrue(CallCertificateValidity.acceptsEvaluation(accepted: true, error: nil))
+    XCTAssertFalse(CallCertificateValidity.acceptsEvaluation(accepted: false, error: nil))
+    let expired = CFErrorCreate(nil, NSOSStatusErrorDomain as CFString, CFIndex(errSecCertificateExpired), nil)
+    XCTAssertFalse(CallCertificateValidity.acceptsEvaluation(accepted: false, error: expired))
+    let otherDomain = CFErrorCreate(nil, "other" as CFString, CFIndex(errSecCertificateValidityPeriodTooLong), nil)
+    XCTAssertFalse(CallCertificateValidity.acceptsEvaluation(accepted: false, error: otherDomain))
   }
 
   func testTransientEventHTTPRetriesOnceAndClearsDiagnosticOnSnapshot() throws {

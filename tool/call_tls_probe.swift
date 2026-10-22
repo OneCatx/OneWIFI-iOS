@@ -47,19 +47,21 @@ final class TLSProbe: NSObject, URLSessionDataDelegate {
     let pinMatches = actual == expectedPin
     // This type is extracted verbatim from the app source at build time.
     let validity = CallCertificateValidity.containsNow(der)
-    print("pinMatches=\(pinMatches) appValidity=\(validity)")
+    let lifetime = CallCertificateValidity.withinPinnedLifetime(der)
+    print("pinMatches=\(pinMatches) appValidity=\(validity) lifetimeOk=\(lifetime)")
     let policy = SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, origin.host! as CFString))
     let anchor = SecTrustSetAnchorCertificates(trust, [leaf] as CFArray)
     let anchorOnly = SecTrustSetAnchorCertificatesOnly(trust, true)
     var error: CFError?
     let accepted = SecTrustEvaluateWithError(trust, &error)
-    print("policyStatus=\(policy) anchorStatus=\(anchor) anchorOnlyStatus=\(anchorOnly) appleTrust=\(accepted)")
+    let trusted = CallCertificateValidity.acceptsEvaluation(accepted: accepted, error: error)
+    print("policyStatus=\(policy) anchorStatus=\(anchor) anchorOnlyStatus=\(anchorOnly) appleTrust=\(accepted) pinnedTrust=\(trusted)")
     if let error {
       // Numeric trust errors only; never dump request/session contents.
       print("trustErrorCode=\(CFErrorGetCode(error))")
     }
-    guard pinMatches, validity, policy == errSecSuccess, anchor == errSecSuccess,
-          anchorOnly == errSecSuccess, accepted else {
+    guard pinMatches, validity, lifetime, policy == errSecSuccess, anchor == errSecSuccess,
+          anchorOnly == errSecSuccess, trusted else {
       completionHandler(.cancelAuthenticationChallenge, nil); return
     }
     completionHandler(.useCredential, URLCredential(trust: trust))

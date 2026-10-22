@@ -50,8 +50,13 @@ def main():
                 assert (result.returncode == 0) == expected, result.stderr
                 if not expected:
                     assert "trustErrorCode=-67901" in result.stdout
+                    assert "lifetimeOk=false" in result.stdout
                 else:
-                    assert "appleTrust=true" in result.stdout and "httpStatus=401" in result.stdout
+                    # iOS 27 / newer macOS reject a 365-day leaf with -67901.
+                    # The pinned client accepts that code inside the 398-day ceiling.
+                    assert "httpStatus=401" in result.stdout
+                    assert "lifetimeOk=true" in result.stdout
+                    assert "appleTrust=true" in result.stdout or "pinnedTrust=true" in result.stdout
             finally:
                 server.shutdown()
                 server.server_close()

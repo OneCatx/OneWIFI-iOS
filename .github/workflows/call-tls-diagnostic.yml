@@ -59,8 +59,10 @@ jobs:
           source = Path('ios/Runner/Calls/CallGatewayClient.swift').read_text()
           marker = 'enum CallCertificateValidity {'
           assert source.count(marker) == 1
+          probe = Path('tool/call_tls_probe.swift').read_text()
+          probe = '\n'.join(line for line in probe.splitlines() if not line.startswith('import '))
           output = Path(os.environ['RUNNER_TEMP']) / 'main.swift'
-          output.write_text('import Foundation\n' + source[source.index(marker):] + '\n' + Path('tool/call_tls_probe.swift').read_text())
+          output.write_text('import Foundation\nimport Security\nimport CryptoKit\n' + source[source.index(marker):] + '\n' + probe + '\n')
           PY
           swiftc -swift-version 5 "$RUNNER_TEMP/main.swift" -o "$RUNNER_TEMP/call-tls-probe"
       - name: Compare certificate lifetimes with Apple TLS
