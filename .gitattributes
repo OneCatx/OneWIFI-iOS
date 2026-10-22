@@ -1,0 +1,16 @@
+# Normalise line endings: the index has always been LF; make the worktree match on every OS
+# so `git status` stops reporting CRLF-only noise on Windows (core.autocrlf no longer matters).
+* text=auto eol=lf
+*.bat text eol=crlf
+
+*.ttf binary
+*.otf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.p12 binary
+*.keystore binary
+*.jks binary

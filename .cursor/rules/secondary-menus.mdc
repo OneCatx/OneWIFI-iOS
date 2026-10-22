@@ -1,0 +1,27 @@
+---
+description: 二级菜单必须居中弹出，禁止用底部抽屉。
+alwaysApply: true
+---
+
+# 二级菜单居中弹出
+
+从卡片、加号、「更多」呼出的二级菜单一律居中 Dialog，不要从底部滑上来。
+
+- 代理页「连接 / 更多」→ `showWifiConnectionSheet` → `showOneGlassPopup`
+- 加号「更多国家」→ `showWifiCountrySheet` → `showOneGlassPopup`
+- 点国家选节点 → `showWifiNodeSheet` → `showOneGlassPopup`
+- 其它二级菜单（eSIM 编辑、通知通道等）同样走 `showOneGlassPopup`
+
+```dart
+// ❌ 底部抽屉
+showModalBottomSheet<void>(context: context, builder: ...);
+
+// ✅ 居中玻璃弹出
+showOneGlassPopup<void>(
+  context: context,
+  heightFactor: 0.64,
+  builder: (context) => const TheMenu(),
+);
+```
+
+确认框继续用 `showOneGlassDialog`（本来就是居中）。不要为二级菜单新建 BottomSheet / `DraggableScrollableSheet`。

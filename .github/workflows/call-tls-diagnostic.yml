@@ -1,0 +1,88 @@
+name: Call TLS diagnostic
+
+on:
+  push:
+    branches: [diagnose/ios-call-tls]
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: HTTPS gateway origin (no credentials)
+        required: true
+        type: string
+      fingerprint:
+        description: Baseline leaf SHA-256 for diagnostic comparison only
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apple-tls:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    env:
+      PROBE_ORIGIN: ${{ inputs.origin || 'https://8.137.155.86:7575' }}
+      PROBE_PIN: ${{ inputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check native diagnostic redaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          source = Path('ios/RunnerTests/CallTransportTests.swift').read_text()
+          start = source.index('    let secret = "secret-token-url"')
+          end = source.index('\n  }', start)
+          body = source[start:end]
+          body = body.replace('XCTAssertEqual(', 'checkEqual(').replace('XCTAssertTrue(', 'checkTrue(').replace('XCTAssertFalse(', 'checkFalse(')
+          helpers = '''import Foundation
+          func checkEqual<T: Equatable>(_ a: T, _ b: T) { precondition(a == b) }
+          func checkTrue(_ value: Bool) { precondition(value) }
+          func checkFalse(_ value: Bool) { precondition(!value) }
+          '''
+          Path(os.environ['RUNNER_TEMP'], 'main.swift').write_text(helpers + body + '\nprint("PASS: bounded diagnostic codes and redaction")\n')
+          PY
+          swiftc -swift-version 5 ios/Runner/Calls/CallGatewayModels.swift \
+            ios/Runner/Calls/CallEventStream.swift ios/Runner/Calls/CallGatewayClient.swift \
+            "$RUNNER_TEMP/main.swift" -o "$RUNNER_TEMP/call-diagnostic-test"
+          "$RUNNER_TEMP/call-diagnostic-test"
+      - name: Compile probe with actual app certificate parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          source = Path('ios/Runner/Calls/CallGatewayClient.swift').read_text()
+          marker = 'enum CallCertificateValidity {'
+          assert source.count(marker) == 1
+          output = Path(os.environ['RUNNER_TEMP']) / 'main.swift'
+          output.write_text('import Foundation\n' + source[source.index(marker):] + '\n' + Path('tool/call_tls_probe.swift').read_text())
+          PY
+          swiftc -swift-version 5 "$RUNNER_TEMP/main.swift" -o "$RUNNER_TEMP/call-tls-probe"
+      - name: Compare certificate lifetimes with Apple TLS
+        run: python3 tool/call_tls_validity_test.py "$RUNNER_TEMP/call-tls-probe"
+      - name: Probe TLS without login or call actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$PROBE_PIN" ]; then
+            # Observe the public leaf only. This is not authenticated gateway trust;
+            # no credentials or production trust settings are used or changed.
+            PROBE_PIN="$(python3 - <<'PY'
+          import hashlib, os, socket, ssl
+          from urllib.parse import urlsplit
+          origin = urlsplit(os.environ['PROBE_ORIGIN'])
+          assert origin.scheme == 'https' and not origin.username and not origin.password
+          with socket.create_connection((origin.hostname, origin.port or 443), timeout=10) as raw:
+              with ssl._create_unverified_context().wrap_socket(raw, server_hostname=origin.hostname) as tls:
+                  print(hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest())
+          PY
+            )"
+          fi
+          "$RUNNER_TEMP/call-tls-probe" "$PROBE_ORIGIN" "$PROBE_PIN"
+          export PROBE_PIN
+          python3 tool/call_tls_ats_test.py

@@ -1,0 +1,157 @@
+name: ios
+
+on:
+  push:
+    branches: [ios, diagnose/ios-call-tls, codex/otp-live-activity-compact-layout]
+  workflow_dispatch:
+
+jobs:
+  unsigned-app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Check SMS Live Activity flow
+        run: |
+          flutter pub get
+          flutter analyze lib/features/sms lib/features/settings/presentation/settings_screen.dart test/features/sms test/features/settings/presentation/settings_screen_test.dart
+          flutter test test/features/sms test/features/settings/presentation/settings_screen_test.dart
+
+      - name: Check diagnostic projection
+        if: github.ref_name == 'diagnose/ios-call-tls'
+        run: |
+          flutter pub get
+          flutter analyze lib/features/calls test/features/calls
+          flutter test test/features/calls
+
+      - name: Test native CallKit coordinator and OTP lifecycle
+        if: github.ref_name == 'diagnose/ios-call-tls' || github.ref_name == 'codex/otp-live-activity-compact-layout'
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build ios --simulator --debug --config-only
+          simulator_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime, rows in devices.items() if "iOS-26" in runtime for d in rows if d["name"].startswith("iPhone")))')"
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$simulator_id" \
+            -parallel-testing-enabled NO -only-testing:RunnerTests/CallCoordinatorTests \
+            -only-testing:RunnerTests/RunnerTests/testAppDelegateOwnsCallCoordinator \
+            -only-testing:RunnerTests/OtpLiveActivityTests \
+            CODE_SIGNING_ALLOWED=NO test
+
+      - name: Build unsigned iOS app
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign --config-only
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            FLUTTER_BUILD_NAME=0.1.28 FLUTTER_BUILD_NUMBER=33 build
+
+      - name: Build OneWifiIsland extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/Runner.xcodeproj -target OneWifiIsland \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            MARKETING_VERSION=0.1.28 CURRENT_PROJECT_VERSION=33 build
+          appex="$(find "$HOME/Library/Developer/Xcode/DerivedData" ios/build -path '*/Release-iphoneos/OneWifiIsland.appex' -type d -print -quit 2>/dev/null)"
+          test -n "$appex"
+          echo "ISLAND_APPEX=$appex" >> "$GITHUB_ENV"
+
+      - name: Pack unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Release-iphoneos/Runner.app' -type d -print -quit)"
+          test -n "$app"
+          test -n "${ISLAND_APPEX:-}"
+          mkdir -p "$app/PlugIns"
+          rm -rf "$app/PlugIns/OneWifiIsland.appex"
+          ditto "$ISLAND_APPEX" "$app/PlugIns/OneWifiIsland.appex"
+          test -d "$app/PlugIns/OneWifiIsland.appex"
+          python3 - "$app/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], 'rb') as file:
+              info = plistlib.load(file)
+          ats = info['NSAppTransportSecurity']
+          # Local gateway: NSAllowsLocalNetworking only (TRASH/正式一致).
+          # ArbitraryLoads 已收紧（身份冻结）；勿再断言 open ATS。
+          assert not ats.get('NSAllowsArbitraryLoads'), ats
+          assert ats.get('NSAllowsLocalNetworking') is True, ats
+          assert set(info['UIBackgroundModes']) == {
+              'audio', 'voip', 'remote-notification',
+          }
+          assert info['NSSupportsLiveActivities'] is True
+          assert info['OneWIFIApnEnvironment'] == 'sandbox'
+          assert info['CFBundleShortVersionString'] == '0.1.28'
+          assert str(info['CFBundleVersion']) == '33'
+          import os
+          app = os.path.dirname(sys.argv[1])
+          assets = os.path.join(app, 'Frameworks', 'App.framework', 'flutter_assets')
+          marker = os.path.join(assets, 'otp_pair_33.txt')
+          with open(marker, 'w', encoding='utf-8') as file:
+              file.write('OTP-PAIR-33\n')
+          assert open(marker, encoding='utf-8').read().strip() == 'OTP-PAIR-33'
+          island = os.path.join(app, 'PlugIns', 'OneWifiIsland.appex')
+          assert os.path.isdir(island), island
+          with open(os.path.join(island, 'Info.plist'), 'rb') as file:
+              extension = plistlib.load(file)
+          assert extension['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension'
+          assert extension['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
+          assert str(extension['CFBundleVersion']) == str(info['CFBundleVersion'])
+          assert os.path.isfile(os.path.join(island, extension['CFBundleExecutable']))
+          print('PASS: packaged Live Activity support, WidgetKit executable, matching versions, APNs environment and local-network ATS')
+          PY
+          python3 - <<'PY'
+          # Entitlements live in the code signature, which an unsigned build does
+          # not have, so this checks the source that the signer will read.
+          import plistlib
+          with open('ios/Runner/Runner.entitlements', 'rb') as file:
+              entitlements = plistlib.load(file)
+          assert entitlements['aps-environment'] == 'development', entitlements
+          print('PASS: aps-environment matches the development provisioning profile')
+          PY
+          mkdir -p ipa/Payload
+          ditto "$app" ipa/Payload/Runner.app
+          (
+            cd ipa
+            ditto -c -k --sequesterRsrc --keepParent Payload ../OneWIFI-unsigned.ipa
+          )
+          test -f OneWIFI-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onewifi-ios-unsigned
+          path: OneWIFI-unsigned.ipa
+          retention-days: 14
+
+      - name: Publish IPA to OneWIFI-APK
+        if: github.ref_name == 'ios' || github.ref_name == 'diagnose/ios-call-tls'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.IPA_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "IPA_RELEASE_TOKEN not set; skip release publish"
+            exit 0
+          fi
+          tag="v0.1.28-ios33-$(git rev-parse --short HEAD)"
+          asset="OneWIFI-unsigned-0.1.28-33.ipa"
+          cp OneWIFI-unsigned.ipa "$asset"
+          gh release create "$tag" "$asset" \
+            --repo asrtroh-netizen/OneWIFI-APK \
+            --title "OneWIFI iOS 0.1.28 (33) · ${GITHUB_SHA::7}" \
+            --notes "Unsigned IPA from CI. Closed ATS (NSAllowsLocalNetworking only; no NSAllowsArbitraryLoads). Sign with your provisioning profile. Commit ${GITHUB_SHA}." \
+            || gh release upload "$tag" "$asset" --repo asrtroh-netizen/OneWIFI-APK

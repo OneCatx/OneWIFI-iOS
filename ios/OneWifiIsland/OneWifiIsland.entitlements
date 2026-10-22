@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 与 Q.mobileprovision 对齐：不申请描述文件里没有的 App Group。 -->
+  <key>aps-environment</key>
+  <string>development</string>
+</dict>
+</plist>

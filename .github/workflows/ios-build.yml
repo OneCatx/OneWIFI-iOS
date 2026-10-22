@@ -1,0 +1,125 @@
+name: iOS build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ios:
+    # The Runner sources use iOS 26 SDK symbols (UIGlassEffect,
+    # AVAudioSession.allowBluetoothHFP), so the image must ship Xcode 26.
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        continue-on-error: true
+        run: flutter analyze --no-fatal-infos
+
+      - name: Unit tests
+        continue-on-error: true
+        run: flutter test
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      # Runner has no "Embed App Extensions" phase, so the Live Activity
+      # extension is built on its own and dropped into Runner.app/PlugIns.
+      # Signing tools re-sign the nested bundle with the tester's profile.
+      - name: Build OneWifiIsland extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/ios/iphoneos/Runner.app"
+          SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist")
+          xcodebuild -project ios/Runner.xcodeproj -target OneWifiIsland \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            MARKETING_VERSION="$SHORT" CURRENT_PROJECT_VERSION="$BUILD" build
+          appex="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Release-iphoneos/OneWifiIsland.appex' -type d -print -quit)"
+          test -n "$appex"
+          mkdir -p "$APP/PlugIns"
+          rm -rf "$APP/PlugIns/OneWifiIsland.appex"
+          ditto "$appex" "$APP/PlugIns/OneWifiIsland.appex"
+          test -d "$APP/PlugIns/OneWifiIsland.appex"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/PlugIns/OneWifiIsland.appex/Info.plist")" = "$SHORT"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/PlugIns/OneWifiIsland.appex/Info.plist")" = "$BUILD"
+
+      # Unsigned IPA: an .ipa is just a zip with Payload/<App>.app inside.
+      # Sideloadly / AltStore can sign this with the user's own Apple ID.
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="build/ios/iphoneos/Runner.app"
+          test -d "$APP"
+          rm -rf dist Payload
+          mkdir -p dist Payload
+          cp -R "$APP" "Payload/Runner.app"
+          # zip is fine for ipa; must keep Payload/ as the zip root
+          zip -qry "dist/OneWIFI-unsigned.ipa" Payload
+          ditto -c -k --sequesterRsrc --keepParent "$APP" dist/Runner-unsigned.app.zip
+          unzip -l "dist/OneWIFI-unsigned.ipa" | head -20
+          ls -lh dist/
+
+      - name: Read bundle versions
+        id: ver
+        run: |
+          set -euo pipefail
+          P="Payload/Runner.app/Info.plist"
+          SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$P")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$P")
+          MIN=$(/usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$P" 2>/dev/null || echo "16.2")
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "min=$MIN" >> "$GITHUB_OUTPUT"
+          echo "version=$SHORT+$BUILD (iOS $MIN)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: onewifi-ios-ipa
+          path: |
+            dist/OneWIFI-unsigned.ipa
+            dist/Runner-unsigned.app.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          name: OneWIFI iOS (unsigned)
+          prerelease: true
+          body: |
+            Unsigned iOS build from `${{ github.sha }}`.
+
+            - Version: ${{ steps.ver.outputs.version }}
+            - Bundle ID: `com.onewifi.onewifiApp`
+            - Signing: none (use Sideloadly / AltStore with your own Apple ID)
+
+            `OneWIFI-unsigned.ipa` is a standard IPA (`Payload/Runner.app`).
+          files: |
+            dist/OneWIFI-unsigned.ipa
+            dist/Runner-unsigned.app.zip
+          fail_on_unmatched_files: true
