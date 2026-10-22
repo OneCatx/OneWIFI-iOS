@@ -57,8 +57,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
             MARKETING_VERSION="$SHORT" CURRENT_PROJECT_VERSION="$BUILD" build
-          appex="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Release-iphoneos/OneWifiIsland.appex' -type d -print -quit)"
-          test -n "$appex"
+          # xcodebuild for this project writes into ios/build, not DerivedData.
+          appex="ios/build/Release-iphoneos/OneWifiIsland.appex"
+          if [ ! -d "$appex" ]; then
+            appex="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Release-iphoneos/OneWifiIsland.appex' -type d -print -quit)"
+          fi
+          test -d "$appex"
+          echo "OneWifiIsland.appex=$appex"
           mkdir -p "$APP/PlugIns"
           rm -rf "$APP/PlugIns/OneWifiIsland.appex"
           ditto "$appex" "$APP/PlugIns/OneWifiIsland.appex"
