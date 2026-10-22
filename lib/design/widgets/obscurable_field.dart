@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'system_controls.dart';
 
@@ -47,9 +48,7 @@ final class _ObscurableFieldState extends State<ObscurableField> {
         suffixIcon: IconButton(
           tooltip: _obscured ? '显示$_revealName' : '隐藏$_revealName',
           icon: SystemIcon(
-            _obscured
-                ? Icons.visibility_outlined
-                : Icons.visibility_off_outlined,
+            _obscured ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
           ),
           onPressed: () => setState(() => _obscured = !_obscured),
         ),
