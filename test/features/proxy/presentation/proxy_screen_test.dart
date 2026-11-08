@@ -58,7 +58,7 @@ void main() {
         tester
             .getSize(find.byKey(ProxyScreen.countryKey('HK-WIFI Selector')))
             .height,
-        82,
+        72,
       );
 
       await tester.tap(find.byKey(ProxyScreen.plusKey));

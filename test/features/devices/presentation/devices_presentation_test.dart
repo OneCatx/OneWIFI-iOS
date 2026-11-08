@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:onewifi_android/core/http/http_transport.dart';
 import 'package:onewifi_android/core/http/request_registry.dart';
 import 'package:onewifi_android/design/theme/one_theme.dart';
+import 'package:onewifi_android/design/one/glass.dart';
 import 'package:onewifi_android/design/tokens/one_tokens.dart';
 import 'package:onewifi_android/design/widgets/stage_row.dart';
 import 'package:onewifi_android/features/devices/data/device_repository.dart';
@@ -15,6 +16,49 @@ import 'package:onewifi_android/features/devices/state/device_detail_controller.
 import 'package:onewifi_android/features/devices/state/device_list_controller.dart';
 
 void main() {
+  for (final bottomInset in <double>[0, 21, 34]) {
+    testWidgets('rescan button clears the dock with inset $bottomInset', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = _listController(
+        list: <_ListHandler>[(cancellation) async => _fleet('safe-id')],
+      );
+      addTearDown(controller.dispose);
+      const dockKey = ValueKey('test-dock');
+      await tester.pumpWidget(MaterialApp(
+        theme: OneTheme.dark(),
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: const Size(400, 900),
+            padding: EdgeInsets.only(bottom: bottomInset),
+            viewPadding: EdgeInsets.only(bottom: bottomInset),
+          ),
+          child: Scaffold(
+            extendBody: true,
+            body: DevicesScreen(
+              controller: controller,
+              onDeviceSelected: (_) {},
+            ),
+            bottomNavigationBar: SizedBox(
+              key: dockKey,
+              height: Glass.dockHeight + Glass.dockBottomGap + bottomInset,
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      expect(
+        tester.getBottomRight(find.byType(FloatingActionButton)).dy,
+        lessThan(tester.getTopLeft(find.byKey(dockKey)).dy),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('list shows safe card details and reports only its safe ID', (
     tester,
   ) async {

@@ -38,6 +38,9 @@ jobs:
         continue-on-error: true
         run: flutter test
 
+      - name: Verify device dock clearance and proxy layout
+        run: flutter test test/features/devices/presentation/devices_presentation_test.dart test/features/proxy/presentation/proxy_screen_test.dart
+
       - name: Build iOS (no codesign)
         run: flutter build ios --release --no-codesign
 

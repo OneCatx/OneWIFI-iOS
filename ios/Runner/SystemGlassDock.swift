@@ -56,7 +56,8 @@ extension SystemGlassDock: UITabBarDelegate {
 final class SystemGlassSurface: NSObject, FlutterPlatformView {
   private let box = UIVisualEffectView()
 
-  init(frame: CGRect) {
+  init(frame: CGRect, dark: Bool) {
+    box.overrideUserInterfaceStyle = dark ? .dark : .light
     box.frame = frame
     box.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     if #available(iOS 26.0, *) {
@@ -71,12 +72,19 @@ final class SystemGlassSurface: NSObject, FlutterPlatformView {
 }
 
 final class SystemGlassSurfaceFactory: NSObject, FlutterPlatformViewFactory {
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
+    FlutterStandardMessageCodec.sharedInstance()
+  }
+
   func create(
     withFrame frame: CGRect,
     viewIdentifier viewId: Int64,
     arguments args: Any?
   ) -> FlutterPlatformView {
-    SystemGlassSurface(frame: frame)
+    SystemGlassSurface(
+      frame: frame,
+      dark: (args as? [String: Any])?["dark"] as? Bool ?? false
+    )
   }
 }
 

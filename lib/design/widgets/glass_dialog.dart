@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../one/glass.dart';
 import '../tokens/one_tokens.dart';
@@ -185,8 +186,15 @@ final class _SystemGlassSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const Positioned.fill(
-          child: UiKitView(viewType: 'onewifi/system_glass_surface'),
+        Positioned.fill(
+          child: UiKitView(
+            key: ValueKey(Theme.of(context).brightness),
+            viewType: 'onewifi/system_glass_surface',
+            creationParams: <String, Object>{
+              'dark': Theme.of(context).brightness == Brightness.dark,
+            },
+            creationParamsCodec: const StandardMessageCodec(),
+          ),
         ),
         child,
       ],

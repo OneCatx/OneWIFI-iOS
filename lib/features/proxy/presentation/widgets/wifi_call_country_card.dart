@@ -18,8 +18,8 @@ final class WifiCallCountryCard extends StatelessWidget {
     super.key,
   });
 
-  /// 原 136 的 60%。
-  static const double extent = 82;
+  /// Compact country tiles, shared by the pinned grid and country picker.
+  static const double extent = 72;
 
   final WifiCallGroup group;
   final VoidCallback onTap;

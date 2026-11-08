@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/state/query_state.dart';
 import '../../../design/tokens/one_tokens.dart';
+import '../../../design/one/glass.dart';
 import '../../../design/widgets/console_layout.dart';
 import '../../../design/widgets/one_status_hero.dart';
 import '../domain/device.dart';
@@ -102,10 +103,16 @@ final class _DevicesScreenState extends State<DevicesScreen> {
           ),
           floatingActionButton: widget.controller.isRescanning
               ? null
-              : FloatingActionButton.extended(
-                  onPressed: _handleRescan,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('重新扫描'),
+              : Padding(
+                  // The outer shell extends its body behind the floating dock.
+                  padding: EdgeInsets.only(
+                    bottom: glassDockScrollPadding(context),
+                  ),
+                  child: FloatingActionButton.extended(
+                    onPressed: _handleRescan,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('重新扫描'),
+                  ),
                 ),
         );
       },
