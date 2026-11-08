@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/state/query_state.dart';
@@ -106,7 +108,10 @@ final class _DevicesScreenState extends State<DevicesScreen> {
               : Padding(
                   // The outer shell extends its body behind the floating dock.
                   padding: EdgeInsets.only(
-                    bottom: glassDockScrollPadding(context),
+                    bottom: math.max(
+                      glassDockScrollPadding(context),
+                      MediaQuery.paddingOf(context).bottom + Glass.space16,
+                    ),
                   ),
                   child: FloatingActionButton.extended(
                     onPressed: _handleRescan,
